@@ -1,0 +1,4 @@
+interface:
+  display_name: "uTools 插件开发"
+  short_description: "面向 Vite 与 TypeScript 的 uTools 插件工程助手"
+  default_prompt: "Use $utools-plugin-development to design, implement, debug, and package a uTools plugin with Vite and TypeScript."
