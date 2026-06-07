@@ -1,6 +1,6 @@
 ---
 name: utools-plugin-development
-description: Build, migrate, debug, package, and review uTools plugin projects using Vite, Vue, React, Angular, Svelte, Solid, TypeScript, the official uTools developer APIs, and @ver5/vite-plugin-utools. Use when tasks mention uTools plugins, plugin.json, preload/preload.ts, window.utools, uTools Developer Tools, UPX/UPXS packaging, browser mock, @ver5/vite-plugin-utools, dynamic commands, ubrowser, registerTool/MCP/AI Agent tools, local db/dbStorage, Sharp/FFmpeg integration, native module rebuilds, or converting Web apps, browser extensions, Electron apps, or Tauri apps into uTools plugin applications.
+description: Build, migrate, debug, package, and review uTools plugin projects using Vite, Vue, React, Angular, Svelte, Solid, TypeScript, the official uTools developer APIs, and @ver5/vite-plugin-utools; default greenfield stack is Vue 3 + Vite + TypeScript + VueUse + Pinia + Vuetify + @ver5/vite-plugin-utools. Use when tasks mention uTools plugins, plugin.json, preload/preload.ts, window.utools, uTools Developer Tools, UPX/UPXS packaging, browser mock, @ver5/vite-plugin-utools, dynamic commands, ubrowser, registerTool/MCP/AI Agent tools, local db/dbStorage, Sharp/FFmpeg integration, native module rebuilds, or converting Web apps, browser extensions, Electron apps, or Tauri apps into uTools plugin applications.
 ---
 
 # uTools Plugin Development
@@ -27,6 +27,7 @@ Use this skill to turn requirements, Web apps, Electron apps, or Tauri apps into
 
 ## Architecture rules
 
+- For a greenfield uTools plugin without user or source-app framework constraints, prefer the latest Vue 3 + Vite + TypeScript + VueUse + Pinia + Vuetify + `@ver5/vite-plugin-utools` stack. Treat this as the default starting point, not a mandate for React/Angular/Svelte/Solid/Electron/Tauri migrations.
 - Keep uTools runtime files explicit: prefer `utools/plugin.json`, `utools/preload.ts`, and `utools/logo.png` as source; treat `dist/` as generated output.
 - With `@ver5/vite-plugin-utools`, require development preload source to be `utools/preload.ts`; let the plugin generate final `dist/preload.js`.
 - Keep browser UI and native capabilities separated. Put UI in Vite `src/`; put filesystem, Electron, OS, db, and AI tool registration in preload.
@@ -39,6 +40,15 @@ Use this skill to turn requirements, Web apps, Electron apps, or Tauri apps into
 - Do not package the repository root. Build the Vite app, then point uTools Developer Tools or UPX packaging at the generated output containing `plugin.json`, `main`, `logo`, and `preload.js`.
 
 ## @ver5/vite-plugin-utools baseline
+
+Default greenfield install:
+
+```bash
+pnpm create vite@latest my-utools-plugin --template vue-ts
+cd my-utools-plugin
+pnpm add vue@latest @vueuse/core@latest pinia@latest vuetify@latest @ver5/vite-plugin-utools@latest
+pnpm add -D vite@latest typescript@latest @vitejs/plugin-vue@latest vue-tsc@latest
+```
 
 Use the plugin when the project is Vite-based and should support browser-side development:
 

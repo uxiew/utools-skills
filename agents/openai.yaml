@@ -1,4 +1,4 @@
 interface:
   display_name: "uTools 插件迁移开发"
-  short_description: "Web/Electron/Tauri 转 uTools 插件工程助手"
-  default_prompt: "Use $utools-plugin-development to migrate a Web, Electron, or Tauri app into a maintainable uTools plugin."
+  short_description: "默认 Vue/Vite 栈的 uTools 插件工程助手"
+  default_prompt: "Use $utools-plugin-development to build a uTools plugin with the preferred Vue 3 + Vite + TypeScript + VueUse + Pinia + Vuetify stack, or migrate a Web/Electron/Tauri app into uTools."

@@ -23,6 +23,19 @@ FRAMEWORK_DEPS = {
 }
 ELECTRON_DEPS = {"electron", "electron-builder", "electron-vite", "@electron/rebuild"}
 TAURI_DEPS = {"@tauri-apps/api", "@tauri-apps/cli"}
+PREFERRED_VUE_STACK_DEPS = {
+    "vue": "Vue 3",
+    "@vueuse/core": "VueUse",
+    "pinia": "Pinia",
+    "vuetify": "Vuetify",
+    "@ver5/vite-plugin-utools": "@ver5/vite-plugin-utools",
+}
+PREFERRED_VUE_STACK_DEV_DEPS = {
+    "vite": "Vite",
+    "typescript": "TypeScript",
+    "@vitejs/plugin-vue": "@vitejs/plugin-vue",
+    "vue-tsc": "vue-tsc",
+}
 
 
 @dataclass
@@ -149,6 +162,24 @@ def has_any_dep(package: dict[str, Any] | None, names: set[str]) -> bool:
 
     deps = package_deps(package)
     return any(name in deps for name in names)
+
+
+def check_preferred_vue_stack(findings: list[Finding], package: dict[str, Any] | None) -> None:
+    """Report non-blocking gaps from the preferred greenfield Vue uTools stack."""
+
+    deps = package_deps(package)
+    if "vue" not in deps or "@ver5/vite-plugin-utools" not in deps:
+        return
+
+    preferred = {**PREFERRED_VUE_STACK_DEPS, **PREFERRED_VUE_STACK_DEV_DEPS}
+    missing = [label for dep, label in preferred.items() if dep not in deps]
+    if missing:
+        add(
+            findings,
+            "info",
+            "Preferred greenfield Vue uTools stack is missing optional/recommended package(s): "
+            f"{', '.join(missing)}. This is non-blocking for migrations or intentionally lean projects.",
+        )
 
 
 def check_path_field(
@@ -336,6 +367,8 @@ def check_package_integration(findings: list[Finding], project: Path, package: d
         ts_text = tsconfig.read_text(encoding="utf-8", errors="ignore")
         if "@ver5/vite-plugin-utools/utools" not in ts_text:
             add(findings, "warn", "tsconfig does not include @ver5/vite-plugin-utools/utools types")
+
+    check_preferred_vue_stack(findings, package)
 
 
 def check_migration_sources(findings: list[Finding], project: Path, package: dict[str, Any] | None) -> None:

@@ -26,16 +26,74 @@ Use `npx utools` to create the default `utools/` scaffold, or `npx utools --dir 
 
 Hard rule for this skill: when using the default `utools/` source directory with `@ver5/vite-plugin-utools`, develop preload as `utools/preload.ts` and set source `utools/plugin.json` to `"preload": "preload.ts"`. Do not use `utools/preload.js` as the source file. The production build remains responsible for generating final `dist/preload.js`.
 
+## Default Vue stack
+
+For a new plugin with no framework constraint, prefer the latest Vue 3 + Vite + TypeScript + VueUse + Pinia + Vuetify stack:
+
+```bash
+pnpm create vite@latest my-utools-plugin --template vue-ts
+cd my-utools-plugin
+pnpm add vue@latest @vueuse/core@latest pinia@latest vuetify@latest @ver5/vite-plugin-utools@latest
+pnpm add -D vite@latest typescript@latest @vitejs/plugin-vue@latest vue-tsc@latest
+```
+
+Npm registry snapshot checked 2026-06-07:
+
+```text
+vue@3.5.35
+vite@8.0.16
+typescript@6.0.3
+@vueuse/core@14.3.0
+pinia@3.0.4
+vuetify@4.1.0
+@ver5/vite-plugin-utools@0.4.1
+@vitejs/plugin-vue@6.0.7
+vue-tsc@3.3.3
+```
+
+Minimal app wiring:
+
+```ts
+// src/main.ts
+import { createPinia } from 'pinia'
+import { createApp } from 'vue'
+import App from './App.vue'
+import { vuetify } from './plugins/vuetify'
+
+createApp(App).use(createPinia()).use(vuetify).mount('#app')
+```
+
+```ts
+// src/plugins/vuetify.ts
+import 'vuetify/styles'
+import { createVuetify } from 'vuetify'
+import * as components from 'vuetify/components'
+import * as directives from 'vuetify/directives'
+
+const prefersDark =
+  window.utools?.isDarkColors?.() ?? window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
+
+export const vuetify = createVuetify({
+  components,
+  directives,
+  theme: {
+    defaultTheme: prefersDark ? 'dark' : 'light',
+  },
+})
+```
+
+Use VueUse for browser state (`usePreferredDark`, `useStorage` for temporary UI only) and Pinia for app state. Keep persistent uTools data behind preload repositories using `utools.db.promises`, `dbStorage`, or `dbCryptoStorage`.
+
 ## Vite config
 
 ```ts
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import vue from '@vitejs/plugin-vue'
 import utools from '@ver5/vite-plugin-utools'
 
 export default defineConfig({
   plugins: [
-    react(),
+    vue(),
     utools({
       configFile: './utools/plugin.json',
       name: 'preload',

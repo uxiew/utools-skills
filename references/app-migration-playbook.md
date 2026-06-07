@@ -30,6 +30,16 @@ Classify the source app:
 
 Do not package the original repository root. The final uTools runtime folder must contain built UI assets, `plugin.json`, logo/assets, generated `preload.js`, and any readable runtime dependencies.
 
+## 0.1 Greenfield default stack
+
+When the user asks for a new uTools plugin and does not specify a framework or legacy source app, start from the latest:
+
+```text
+Vue 3 + Vite + TypeScript + VueUse + Pinia + Vuetify + @ver5/vite-plugin-utools
+```
+
+Use `@latest` installs and refresh versions with `npm view <package> version` before pinning. This stack is preferred because it gives a compact Vue UI, typed preload bridge, composables for host state, predictable app state via Pinia, and a ready uTools-friendly component system via Vuetify. For migrations, preserve the source framework unless a rewrite is explicitly requested.
+
 ## 1. Universal conversion flow
 
 1. Create/normalize `utools/` source runtime:

@@ -12,10 +12,35 @@
 
 ## 核心约束
 
+- 新建插件且用户未指定框架时，默认优选最新：`Vue 3 + Vite + TypeScript + VueUse + Pinia + Vuetify + @ver5/vite-plugin-utools`。
+- 迁移既有 Vue / React / Angular / Svelte / Solid / Electron / Tauri 项目时，默认尊重源项目技术栈；只有在用户明确要求重写时才切换到默认 Vue 栈。
 - 源码工程默认使用：`utools/plugin.json` + `utools/preload.ts` + `utools/logo.png`。
 - 使用 `@ver5/vite-plugin-utools` 时，源码 `utools/plugin.json` 的 `preload` 必须是 `"preload.ts"`。
 - 生产构建输出仍应生成 `dist/preload.js`，并确保它不落在 `"type": "module"` 的 package scope 下；必要时在 `dist/package.json` 写入 `{ "type": "commonjs" }`。
 - UI 与宿主能力分层：前端只调用窄桥接 API，文件系统、Electron renderer API、uTools DB、AI tools 等放在 preload/service 层。
+
+## 默认新建栈
+
+```bash
+pnpm create vite@latest my-utools-plugin --template vue-ts
+cd my-utools-plugin
+pnpm add vue@latest @vueuse/core@latest pinia@latest vuetify@latest @ver5/vite-plugin-utools@latest
+pnpm add -D vite@latest typescript@latest @vitejs/plugin-vue@latest vue-tsc@latest
+```
+
+当前 npm registry 快照（2026-06-07）：
+
+```text
+vue@3.5.35
+vite@8.0.16
+typescript@6.0.3
+@vueuse/core@14.3.0
+pinia@3.0.4
+vuetify@4.1.0
+@ver5/vite-plugin-utools@0.4.1
+@vitejs/plugin-vue@6.0.7
+vue-tsc@3.3.3
+```
 
 ## 目录结构
 
