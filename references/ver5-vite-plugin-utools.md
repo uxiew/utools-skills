@@ -1,6 +1,6 @@
 # @ver5/vite-plugin-utools reference
 
-Source snapshot: 2026-05-10; npm registry latest rechecked 2026-05-27: `@ver5/vite-plugin-utools@0.4.1` published 2026-04-16. Source links: https://www.npmjs.com/package/@ver5/vite-plugin-utools, https://registry.npmjs.org/%40ver5%2Fvite-plugin-utools, https://github.com/uxiew/vite-plugin-utools
+Source snapshot: 2026-05-10; npm registry latest rechecked 2026-06-07: `@ver5/vite-plugin-utools@0.4.1` published 2026-04-16. Source links: https://www.npmjs.com/package/@ver5/vite-plugin-utools, https://registry.npmjs.org/%40ver5%2Fvite-plugin-utools, https://github.com/uxiew/vite-plugin-utools
 
 ## What it solves
 

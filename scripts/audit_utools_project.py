@@ -14,6 +14,15 @@ from typing import Any, Iterable
 MATCH_TYPES = {"regex", "over", "img", "files", "window"}
 CATCH_ALL_REGEX = {"/.*/", "/.+/", "/(.)+/", "/[\\s\\S]*/"}
 SNAKE_CASE_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
+FRAMEWORK_DEPS = {
+    "vue": "Vue",
+    "react": "React",
+    "@angular/core": "Angular",
+    "svelte": "Svelte",
+    "solid-js": "Solid",
+}
+ELECTRON_DEPS = {"electron", "electron-builder", "electron-vite", "@electron/rebuild"}
+TAURI_DEPS = {"@tauri-apps/api", "@tauri-apps/cli"}
 
 
 @dataclass
@@ -118,6 +127,28 @@ def has_ver5_plugin(package: dict[str, Any] | None) -> bool:
         return False
     deps = {**package.get("dependencies", {}), **package.get("devDependencies", {})}
     return "@ver5/vite-plugin-utools" in deps
+
+
+def package_deps(package: dict[str, Any] | None) -> dict[str, Any]:
+    """Return combined dependencies and devDependencies."""
+
+    if not package:
+        return {}
+    return {**package.get("dependencies", {}), **package.get("devDependencies", {})}
+
+
+def detect_frameworks(package: dict[str, Any] | None) -> list[str]:
+    """Detect common frontend frameworks from package dependencies."""
+
+    deps = package_deps(package)
+    return [label for dep, label in FRAMEWORK_DEPS.items() if dep in deps]
+
+
+def has_any_dep(package: dict[str, Any] | None, names: set[str]) -> bool:
+    """Return whether any dependency name is present."""
+
+    deps = package_deps(package)
+    return any(name in deps for name in names)
 
 
 def check_path_field(
@@ -307,6 +338,44 @@ def check_package_integration(findings: list[Finding], project: Path, package: d
             add(findings, "warn", "tsconfig does not include @ver5/vite-plugin-utools/utools types")
 
 
+def check_migration_sources(findings: list[Finding], project: Path, package: dict[str, Any] | None) -> None:
+    """Detect Web/Electron/Tauri source-app signals and suggest migration references."""
+
+    frameworks = detect_frameworks(package)
+    if frameworks:
+        add(
+            findings,
+            "info",
+            f"Detected Web framework(s): {', '.join(frameworks)}. Use references/app-migration-playbook.md and references/framework-quirks.md.",
+        )
+
+    if has_any_dep(package, ELECTRON_DEPS) or any((project / path).exists() for path in ("electron", "main.js", "main.ts")):
+        add(
+            findings,
+            "info",
+            "Detected Electron-style project signals. Map main-process/ipcMain logic into utools/preload.ts services; read references/app-migration-playbook.md and references/native-module-recompile.md when native modules exist.",
+        )
+
+    tauri_config_paths = [
+        project / "src-tauri" / "tauri.conf.json",
+        project / "src-tauri" / "tauri.conf.json5",
+        project / "src-tauri" / "Tauri.toml",
+    ]
+    if has_any_dep(package, TAURI_DEPS) or any(path.exists() for path in tauri_config_paths):
+        add(
+            findings,
+            "info",
+            "Detected Tauri project signals. Map #[tauri::command] / invoke() calls to utools/preload.ts services; read references/tauri-command-mapping.md.",
+        )
+
+    if package and not has_ver5_plugin(package) and frameworks:
+        add(
+            findings,
+            "info",
+            "For Web-to-uTools migration, add @ver5/vite-plugin-utools, utools/plugin.json, utools/preload.ts, and hash routing before packaging.",
+        )
+
+
 def check_manifest(project: Path, manifest: Path) -> tuple[dict[str, Any] | None, list[Finding]]:
     """Run manifest-specific checks."""
 
@@ -343,6 +412,7 @@ def check_manifest(project: Path, manifest: Path) -> tuple[dict[str, Any] | None
     check_features(findings, data)
     check_tools(findings, data)
     check_package_integration(findings, project, package)
+    check_migration_sources(findings, project, package)
     return data, findings
 
 

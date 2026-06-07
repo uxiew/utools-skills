@@ -1,4 +1,4 @@
 interface:
-  display_name: "uTools 插件开发"
-  short_description: "面向 Vite 与 TypeScript 的 uTools 插件工程助手"
-  default_prompt: "Use $utools-plugin-development to design, implement, debug, and package a uTools plugin with Vite and TypeScript."
+  display_name: "uTools 插件迁移开发"
+  short_description: "Web/Electron/Tauri 转 uTools 插件工程助手"
+  default_prompt: "Use $utools-plugin-development to migrate a Web, Electron, or Tauri app into a maintainable uTools plugin."
