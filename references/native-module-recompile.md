@@ -1,6 +1,6 @@
 # 原生模块 ABI 重编译详细指南
 
-> 当 `preload.js` 中 `require('some-native-module')` 报
+> 当 `utools/preload.ts` 引入或调用原生模块后，生成的 `dist/preload.js` 报
 > `Module did not self-register` 或 `NODE_MODULE_VERSION mismatch` 时，
 > 使用本指南进行重编译。
 
@@ -44,8 +44,9 @@ uTools 内置 Electron（例如 Electron 29）
 
 **方法 A：在插件内打印**（最准确）
 
-```javascript
-// preload.js 中临时添加
+```ts
+// utools/preload.ts 中临时添加；通过命名导出挂载为 window.preload.logRuntimeVersions()
+export function logRuntimeVersions(): void {
 console.log({
   node:     process.version,               // e.g. "v18.17.0"
   electron: process.versions.electron,     // e.g. "29.0.0"
@@ -53,6 +54,7 @@ console.log({
   chrome:   process.versions.chrome,       // e.g. "120.0.6099.291"
   v8:       process.versions.v8,
 })
+}
 ```
 
 **方法 B：查阅官方文档 / 更新日志**
@@ -254,12 +256,13 @@ npx electron-rebuild --version "29.0.0" --arch x64
 
 可能原因：
 1. **多份 .node 文件**：项目中有多个版本的 native 模块（npm workspaces、pnpm 软链接等）
-2. **preload.js 中 require 路径错误**：确认路径指向重编译后的版本
+2. **preload.ts 中导入/加载路径错误**：确认路径指向重编译后的版本，且生成的 `dist/preload.js` 能解析到同一份 `.node`
 3. **arch 不匹配**：macOS 上 x64/arm64 混用
 
-```javascript
-// preload.js 调试：打印实际加载的 .node 文件路径
-const Module = require('module')
+```ts
+// utools/preload.ts 调试：打印实际加载的 .node 文件路径
+import Module from 'node:module'
+
 const orig = Module._resolveFilename.bind(Module)
 Module._resolveFilename = function(request, ...args) {
   const result = orig(request, ...args)
@@ -288,14 +291,15 @@ Module._resolveFilename = function(request, ...args) {
 | `leveldown` | `level-js`（IndexedDB）或 `utools.db` | — | ✅ 基本 |
 | `ffi-napi` | 无等价纯 JS 方案 | — | ❌ 需重编译 |
 
-### sql.js 使用示例（preload.js）
+### sql.js 使用示例（utools/preload.ts）
 
-```javascript
-// preload.js
+```ts
+// utools/preload.ts
 // ⚠️ sql.js 使用 WASM，首次加载需要几百毫秒，建议在插件初始化时预加载
 
-const path = require('path')
-const fs = require('fs')
+import fs from 'node:fs'
+import path from 'node:path'
+import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js'
 
 // 插件目录（wasm 文件需要放在插件包内）
 const wasmPath = path.join(
@@ -303,71 +307,67 @@ const wasmPath = path.join(
   'node_modules/sql.js/dist/sql-wasm.wasm'
 )
 
-let _SQL = null
-let _db = null
+let _SQL: SqlJsStatic | null = null
+let _db: Database | null = null
 const DB_PATH = path.join(window.utools.getPath('userData'), 'app.sqlite')
 
-window.preload = {
-  async initDB() {
-    if (_db) return  // 已初始化
+/** 初始化 sql.js 数据库。 */
+export async function initDB(): Promise<void> {
+  if (_db) return
 
-    const initSqlJs = require('sql.js')
-    _SQL = await initSqlJs({
-      locateFile: () => wasmPath  // 指向本地 wasm 文件
-    })
+  _SQL = await initSqlJs({
+    locateFile: () => wasmPath,
+  })
 
-    if (fs.existsSync(DB_PATH)) {
-      const fileBuffer = fs.readFileSync(DB_PATH)
-      _db = new _SQL.Database(fileBuffer)
-    } else {
-      _db = new _SQL.Database()
-      // 初始化表结构
-      _db.run(`CREATE TABLE IF NOT EXISTS items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        content TEXT,
-        created_at INTEGER DEFAULT (strftime('%s', 'now'))
-      )`)
-      window.preload.persist()  // 初次创建立即持久化
-    }
-  },
+  if (fs.existsSync(DB_PATH)) {
+    const fileBuffer = fs.readFileSync(DB_PATH)
+    _db = new _SQL.Database(fileBuffer)
+    return
+  }
 
-  // 查询（返回行数组）
-  query(sql, params = []) {
-    if (!_db) throw new Error('DB 未初始化，请先调用 initDB()')
-    const result = _db.exec(sql, params)
-    if (!result.length) return []
-    const [{ columns, values }] = result
-    return values.map(row =>
-      Object.fromEntries(columns.map((col, i) => [col, row[i]]))
-    )
-  },
+  _db = new _SQL.Database()
+  _db.run(`CREATE TABLE IF NOT EXISTS items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    content TEXT,
+    created_at INTEGER DEFAULT (strftime('%s', 'now'))
+  )`)
+  persist()
+}
 
-  // 执行写操作（INSERT/UPDATE/DELETE）
-  run(sql, params = []) {
-    if (!_db) throw new Error('DB 未初始化')
-    _db.run(sql, params)
-    window.preload.persist()  // 写操作后立即持久化
-  },
+/** 查询并返回行对象数组。 */
+export function query(sql: string, params: unknown[] = []): Record<string, unknown>[] {
+  if (!_db) throw new Error('DB 未初始化，请先调用 initDB()')
+  const result = _db.exec(sql, params)
+  if (!result.length) return []
+  const [{ columns, values }] = result
+  return values.map(row => Object.fromEntries(columns.map((col, i) => [col, row[i]])))
+}
 
-  // 持久化到磁盘（sql.js 在内存中运行，需手动保存）
-  persist() {
-    if (!_db) return
-    const data = _db.export()
-    fs.writeFileSync(DB_PATH, Buffer.from(data))
-  },
+/** 执行写操作并立即持久化。 */
+export function run(sql: string, params: unknown[] = []): void {
+  if (!_db) throw new Error('DB 未初始化')
+  _db.run(sql, params)
+  persist()
+}
 
-  // 关闭数据库
-  closeDB() {
-    _db?.close()
-    _db = null
-  },
+/** 持久化到磁盘。 */
+export function persist(): void {
+  if (!_db) return
+  const data = _db.export()
+  fs.writeFileSync(DB_PATH, Buffer.from(data))
+}
+
+/** 关闭数据库。 */
+export function closeDB(): void {
+  _db?.close()
+  _db = null
 }
 
 // 插件卸载时关闭数据库
 window.utools.onPluginDetach(() => {
-  window.preload.persist()
-  window.preload.closeDB()
+  persist()
+  closeDB()
 })
 ```
 

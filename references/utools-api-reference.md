@@ -7,7 +7,7 @@ Use this file when implementing `preload.ts`, routing `onPluginEnter`, designing
 ## Mental model
 
 - `window.utools` is the host bridge. It gives plugin code access to uTools lifecycle events, host window control, clipboard/input, OS helpers, local db, screen/user info, automation, AI, and integrations.
-- `preload` is the safest place to centralize native/host calls. UI components should call a narrow bridge such as `window.preload.saveConfig(...)`, not raw `window.utools.db.put(...)` everywhere.
+- `utools/preload.ts` is the safest place to centralize native/host calls. With `@ver5/vite-plugin-utools`, expose page services as TypeScript named exports; the plugin mounts them to `window[name]`, defaulting to `window.preload`.
 - `plugin.json.features[].code` is the stable route key. Command labels are user-facing text and should not drive business logic.
 - Browser dev mocks must emulate API shape and return contract-correct values. Avoid blanket `undefined`; use realistic strings, arrays, booleans, db docs, file paths, and payload objects.
 - Some API names preserve official spelling: `setExpendHeight`, `getCopyedFiles`, `reirect` in older type text. Do not silently rename host APIs.

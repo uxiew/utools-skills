@@ -28,8 +28,11 @@ Use this skill to turn requirements, Web apps, Electron apps, or Tauri apps into
 ## Architecture rules
 
 - For a greenfield uTools plugin without user or source-app framework constraints, prefer the latest Vue 3 + Vite + TypeScript + VueUse + Pinia + Vuetify + `@ver5/vite-plugin-utools` stack. Treat this as the default starting point, not a mandate for React/Angular/Svelte/Solid/Electron/Tauri migrations.
-- Keep uTools runtime files explicit: prefer `utools/plugin.json`, `utools/preload.ts`, and `utools/logo.png` as source; treat `dist/` as generated output.
-- With `@ver5/vite-plugin-utools`, require development preload source to be `utools/preload.ts`; let the plugin generate final `dist/preload.js`.
+- Treat `@ver5/vite-plugin-utools` + TypeScript as the default engineering path. Do not recommend ordinary hand-written JS preload source for new work.
+- Keep uTools source files explicit: `utools/plugin.json`, `utools/preload.ts`, and `utools/logo.png`; treat `dist/` as generated output.
+- With `@ver5/vite-plugin-utools`, require source preload to be `utools/preload.ts` and source manifest to use `"preload": "preload.ts"`; let the plugin generate final `dist/preload.js`.
+- Expose page-facing services from `utools/preload.ts` with named exports. Those named exports mount to `window[name]` from the Vite plugin config, defaulting to `window.preload`; avoid `window.preload = { ... }` in source examples.
+- Use browser mocks only for simple UI viewing and contract checks in a normal browser. Do not treat mock behavior as proof that the plugin works in uTools; always verify generated output in uTools Developer Tools when host APIs, Node/Electron APIs, files, db, AI tools, or packaging matter.
 - Keep browser UI and native capabilities separated. Put UI in Vite `src/`; put filesystem, Electron, OS, db, and AI tool registration in preload.
 - For Web apps, fix hash routing, relative assets, `file://` local fetches, browser storage, and early `window.utools` reads before chasing framework-specific bugs.
 - For Electron apps, there is no independent main process in uTools: fold `ipcMain` handlers and main-process services into preload exports or uTools APIs.
@@ -46,8 +49,8 @@ Default greenfield install:
 ```bash
 pnpm create vite@latest my-utools-plugin --template vue-ts
 cd my-utools-plugin
-pnpm add vue@latest @vueuse/core@latest pinia@latest vuetify@latest @ver5/vite-plugin-utools@latest
-pnpm add -D vite@latest typescript@latest @vitejs/plugin-vue@latest vue-tsc@latest
+pnpm add vue@latest @vueuse/core@latest pinia@latest vuetify@latest
+pnpm add -D vite@latest typescript@latest @vitejs/plugin-vue@latest vue-tsc@latest @ver5/vite-plugin-utools@latest
 ```
 
 Use the plugin when the project is Vite-based and should support browser-side development:
@@ -83,8 +86,8 @@ Important behavior:
 
 - `configFile` is required and paths inside `plugin.json` resolve relative to that file.
 - For the default `configFile: './utools/plugin.json'` source manifest, `preload` must be `preload.ts`. Do not develop against `utools/preload.js`; final runtime output should still be generated as `dist/preload.js`.
-- Named exports from `preload.ts` mount to `window[name]`; default export object mounts directly on `window`.
-- Dev mode generates browser mocks from `preload.ts`; customize user overrides instead of hacking app-layer fallbacks.
+- Named exports from `preload.ts` mount to `window[name]`; with `name: 'preload'`, call them as `window.preload.someMethod()`. Default export objects mount directly on `window`; avoid default export for service APIs because it pollutes globals.
+- Dev mode injects `window.utools` and preload mocks from `preload.ts` for browser-side UI checks only; customize `utools/preload.mock.ts` user overrides instead of hacking app-layer fallbacks.
 - `upx: true` or an `upx` object can emit `.upx`; encrypted `.upxs` remains a Developer Tools/server-side flow.
 - Keep `minify` off for preload unless the target review policy explicitly allows it; official docs require readable preload code for submission.
 - Ensure generated `preload.js` is not inside a `type: module` package scope. If the nearest parent `package.json` has `"type": "module"`, Node/Electron treats `.js` as ESM and CommonJS preload code can fail; put a nearer `{ "type": "commonjs" }` package file in the packaged output or isolate the preload output.
@@ -92,11 +95,11 @@ Important behavior:
 ## Implementation checklist
 
 - Manifest: unique `features[].code`; concise unique command names; match commands use valid `regex`/`over`/`img`/`files`/`window` shapes; `tools` keys use lower snake_case and have object `inputSchema`.
-- Preload: expose the smallest stable API surface on `window`; add TSDoc/JSDoc for exported functions; avoid leaking raw Node primitives to UI when a narrow operation is enough.
+- Preload: implement source as `utools/preload.ts` with TypeScript named exports; add TSDoc/JSDoc for exported functions; avoid leaking raw Node primitives to UI when a narrow operation is enough.
 - Migration: map old platform APIs before editing UI. For Electron map `ipcMain`/`ipcRenderer`, dialogs, shell, windows, storage, and native modules; for Tauri map every `invoke()` / `#[tauri::command]` pair.
 - uTools API: choose host APIs by capability, not by vague similarity. Check `references/utools-api-reference.md` before using lifecycle, window, clipboard/input, db, ubrowser, AI, Sharp, or FFmpeg APIs.
 - UI: use Vue Composition API or React Hooks; adapt to uTools light/dark theme via `utools.isDarkColors()` plus browser fallback; keep empty/error/loading states usable in the small host window.
-- Dev: make browser mocks return contract-correct data, not `undefined`; verify both browser dev and uTools Developer Tools output `plugin.json`.
+- Dev: make `utools/preload.mock.ts` return contract-correct data, not `undefined`; use browser dev for simple UI viewing, then verify generated `dist/plugin.json` in uTools Developer Tools.
 - Package: inspect `dist/plugin.json`, `dist/preload.js`, assets, copied dependencies, and optional `.upx`; for UPX problems, list the archive or output files instead of assuming build success.
 - AI tools: define `plugin.json.tools` and register matching tools during preload/page initialization, not inside `onPluginEnter`.
 

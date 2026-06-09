@@ -47,9 +47,12 @@ onMounted(() => {
 // ❌ 错误
 const data = await fetch('/config/settings.json').then(r => r.json())
 
-// ✅ 方案 A：在 preload.js 中用 fs 读取
-window.preload.readJSON = (p) =>
-  JSON.parse(require('fs').readFileSync(p, 'utf-8'))
+// ✅ 方案 A：在 utools/preload.ts 中用命名导出读取
+import { readFileSync } from 'node:fs'
+
+export function readJSON(p: string): unknown {
+  return JSON.parse(readFileSync(p, 'utf-8'))
+}
 
 // 渲染层：
 const pluginPath = window.utools.getPluginPath()
@@ -128,7 +131,7 @@ const ro = new ResizeObserver(([e]) => {
 **现象**：使用 `<KeepAlive>` 缓存组件时，`onActivated` / `onDeactivated` 的触发时机与
 uTools 的 `onPluginEnter` / `onPluginOut` 不对齐，导致数据重复请求或状态不一致。
 
-**原因**：uTools 的生命周期钩子在 `preload.js` 层注册，与 Vue 的组件激活周期相互独立。
+**原因**：uTools 的生命周期钩子在 `utools/preload.ts` 层注册，与 Vue 的组件激活周期相互独立。
 
 ```typescript
 // ❌ 问题：onActivated 在插件首次加载时不触发（只有 onMounted 触发）
@@ -141,7 +144,7 @@ onActivated(() => {
 const app = createApp(App)
 app.provide('utoolsEnter', ref(null))
 
-// preload.js
+// utools/preload.ts
 window.utools.onPluginEnter((payload) => {
   window.dispatchEvent(new CustomEvent('utools:enter', { detail: payload }))
 })
@@ -294,7 +297,7 @@ react-devtools
 **现象**：插件运行一段时间后越来越卡，内存持续增长。
 
 **原因**：Zone.js 会 patch 全局的 `setTimeout`、`Promise`、`EventEmitter` 等，
-包括 `preload.js` 中 Node.js 暴露的异步 API，从而在 Angular 的变更检测周期内
+包括 `preload.ts` 命名导出暴露的 Node.js 异步 API，从而在 Angular 的变更检测周期内
 积累大量待处理的微任务。
 
 ```typescript
@@ -399,7 +402,7 @@ onMount(() => {
   return () => window.removeEventListener('utools:out', handler)
 })
 
-// preload.js 中发出事件
+// utools/preload.ts 中发出事件
 window.utools.onPluginOut(() => {
   window.dispatchEvent(new CustomEvent('utools:out'))
 })

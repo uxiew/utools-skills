@@ -1,12 +1,12 @@
 # Skill overlay
 
-> Current skill overlay (2026-06-07): treat this as a quick lookup for `window.utools` methods. For architecture decisions, also read `utools-api-reference.md`; for source-to-dist preload rules, trust `SKILL.md` and `ver5-vite-plugin-utools.md`.
+> Current skill overlay (2026-06-09): treat this as a quick lookup for `window.utools` methods. For architecture decisions, also read `utools-api-reference.md`; for source-to-dist preload rules, trust `SKILL.md` and `ver5-vite-plugin-utools.md`.
 
 ---
 
 # uTools API 速查手册
 
-> 所有 API 均通过 `window.utools.*` 访问（渲染层直接调用，无需 require）。
+> uTools 宿主 API 通过 `window.utools.*` 访问；Node/Electron/文件系统等能力应在 `utools/preload.ts` 中用 TypeScript 命名导出封装，再通过 `window.preload.*`（或自定义 `window[name].*`）给 UI 调用。
 > 类型定义参考：[utools-api-types](https://github.com/uTools-Labs/utools-api-types)
 
 ---
@@ -283,9 +283,9 @@ interface DbResult {
 }
 ```
 
-```javascript
+```ts
 // 最佳实践：封装 set 操作自动处理 _rev
-function dbSet(id, data) {
+function dbSet(id: string, data: unknown) {
   const existing = window.utools.db.get(id)
   return window.utools.db.put(
     existing ? { ...existing, data } : { _id: id, data }

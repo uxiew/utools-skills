@@ -40,6 +40,8 @@ Vue 3 + Vite + TypeScript + VueUse + Pinia + Vuetify + @ver5/vite-plugin-utools
 
 Use `@latest` installs and refresh versions with `npm view <package> version` before pinning. This stack is preferred because it gives a compact Vue UI, typed preload bridge, composables for host state, predictable app state via Pinia, and a ready uTools-friendly component system via Vuetify. For migrations, preserve the source framework unless a rewrite is explicitly requested.
 
+Strict source rule: even for migrations, prefer the `@ver5/vite-plugin-utools` TypeScript engineering path. Author `utools/preload.ts`, set source `utools/plugin.json` to `"preload": "preload.ts"`, and expose services via named exports mounted to `window[name]` (default `window.preload`). Convert legacy examples that assign `window.preload = { ... }` into TypeScript named exports.
+
 ## 1. Universal conversion flow
 
 1. Create/normalize `utools/` source runtime:
@@ -48,9 +50,9 @@ Use `@latest` installs and refresh versions with `npm view <package> version` be
    utools/preload.ts
    utools/logo.png
    ```
-2. Add `@ver5/vite-plugin-utools` and configure it with `configFile: './utools/plugin.json'`.
+2. Add `@ver5/vite-plugin-utools` as a dev dependency and configure it with `configFile: './utools/plugin.json'`.
 3. Enforce source preload rule: `utools/plugin.json` must use `"preload": "preload.ts"`; final `dist/plugin.json` should point to `preload.js`.
-4. Move native/host work behind a narrow preload bridge. UI calls `window.preload.*`; preload calls `window.utools.*`, Node, and Electron renderer APIs.
+4. Move native/host work behind a narrow preload bridge. `utools/preload.ts` exports named functions; UI calls `window.preload.*` by default; preload calls `window.utools.*`, Node, and Electron renderer APIs.
 5. Make routing and assets uTools-safe:
    - Use hash routing, not browser history routing.
    - Use relative asset base, not root-absolute paths.
@@ -58,7 +60,7 @@ Use `@latest` installs and refresh versions with `npm view <package> version` be
 6. Replace storage:
    - UI-only temporary state can stay in framework stores.
    - Persistent plugin config should use `utools.db.promises`, `dbStorage`, `dbCryptoStorage`, or explicit file-backed repositories in preload.
-7. Mock browser development with contract-correct values. Never return `undefined` just to silence TypeScript.
+7. Mock browser development with contract-correct values in generated `preload.mock.ts`. Use it only for simple browser UI checks; never return `undefined` just to silence TypeScript.
 8. Validate in four layers: static audit → type/build → generated `dist/plugin.json`/file list → uTools Developer Tools/UPX runtime.
 
 ## 2. Web framework lane

@@ -17,7 +17,7 @@ Source snapshot: 2026-05-10, refreshed from `https://www.u-tools.cn/docs/develop
 ## Development flow
 
 1. Create a project in uTools Developer Tools, then point it at a folder containing `plugin.json`.
-2. Keep source compilation separate from final plugin output. uTools recognizes ordinary HTML/CSS/JavaScript assets; framework source must be built first.
+2. Keep source compilation separate from final plugin output. uTools recognizes final HTML/CSS/JavaScript runtime assets, but this skill's source workflow should use Vite + TypeScript + `@ver5/vite-plugin-utools`.
 3. During development, enable reload-on-enter / kill-on-background behavior in Developer Tools when preload code changes, because preload does not hot-reload like browser UI.
 4. Debug with the plugin window's Developer Tools; for Vite/Webpack, use a dev server during UI iteration and the generated output `plugin.json` for uTools integration.
 5. Offline packages are for testing/internal sharing; market publishing has its own metadata, review, screenshots, manual, and version flow.
@@ -28,7 +28,7 @@ Core fields:
 
 - `main`: relative path to an `.html` entry. Required for UI plugins.
 - `logo`: relative path to the plugin logo. Required.
-- `preload`: relative path to a `.js` preload script. Optional for simple UI plugins; required when using native APIs or AI tools.
+- `preload`: in official final runtime, relative path to a `.js` preload script. In this skill's `@ver5/vite-plugin-utools` source layout, write `"preload": "preload.ts"` under `utools/plugin.json` and let the plugin generate `dist/preload.js`.
 - `pluginSetting.single`: boolean, default `true`.
 - `pluginSetting.height`: number, default `544`; can be changed at runtime with `utools.setExpendHeight`.
 - `features`: array of user-facing capabilities. Required for UI-triggered plugins; each feature needs a unique `code` and one or more `cmds`.
@@ -65,7 +65,7 @@ AI tool manifest rules:
 - If `preload.js` is under a nearest parent `package.json` with `"type": "module"`, Node/Electron treats that `.js` file as an ES module. This conflicts with CommonJS-style preload code and can trigger errors such as “preload.js is treated as an ES module file...”. Fix the packaged runtime scope by adding a nearer `package.json` with `{ "type": "commonjs" }`, removing the ESM package scope from the plugin output, or otherwise isolating final preload code from the project-root ESM scope.
 - Put preload beside `plugin.json` or under that folder so it is included in packaging.
 - In Vite projects that use `@ver5/vite-plugin-utools`, keep official runtime requirements separate from source authoring: author `utools/preload.ts` and let the plugin emit final CommonJS-compatible `preload.js` into `dist`.
-- Expose a narrow API on `window`, e.g. `window.services = { readConfig, saveConfig }`, rather than giving UI direct access to `fs`, `child_process`, or large mutable global state.
+- Expose a narrow API with `preload.ts` named exports. With plugin option `name: 'preload'`, `export function readConfig()` becomes `window.preload.readConfig()` in the page. Avoid manual `window.preload = { ... }` source assignments except when describing generated/legacy runtime behavior.
 - Third-party Node dependencies should be present beside preload in the final package when not bundled; native modules need extra care and runtime verification.
 
 ## API categories to check before implementation

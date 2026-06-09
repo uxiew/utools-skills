@@ -4,6 +4,8 @@
 > - Rust Command → Node.js 实现的完整对照
 > - `@tauri-apps/api` → uTools/preload 调用的对照
 > - 按功能域分类，便于批量替换
+>
+> Skill 规则：所有 Node.js/uTools 替代实现都应写在 `utools/preload.ts` 中，并通过 TypeScript 命名导出挂载到 `window[name]`（默认 `window.preload`）。不要把旧式 `window.preload = { ... }` / 手写 `preload.js` 当作源码模板；如遇到旧片段，迁移为命名导出。
 
 ---
 
@@ -27,7 +29,7 @@
 
 ## 1. 文件系统（fs）
 
-### Rust 实现 → preload.js Node.js 实现
+### Rust 实现 → `utools/preload.ts` TypeScript 实现
 
 ```rust
 // ── 原 Tauri Rust Command ──
@@ -86,84 +88,58 @@ fn copy_file(src: String, dst: String) -> Result<(), String> {
 fn file_metadata(path: String) -> Result<FileMetadata, String> { ... }
 ```
 
-```javascript
-// ── 等效 preload.js（Node.js）──
-const fs = require('node:fs')
-const fsPromises = require('node:fs/promises')
+```ts
+// ── utools/preload.ts：命名导出会挂载到 window.preload.* ──
+import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
+import path from 'node:path'
 
-window.preload = {
-  // read_text_file
-  readTextFile: (path) => fs.readFileSync(path, 'utf-8'),
-  readTextFileAsync: (path) => fsPromises.readFile(path, 'utf-8'),
+export const readTextFile = (filePath: string): string => fs.readFileSync(filePath, 'utf-8')
+export const readTextFileAsync = (filePath: string): Promise<string> => fsPromises.readFile(filePath, 'utf-8')
+export const writeTextFile = (filePath: string, content: string): void => fs.writeFileSync(filePath, content, 'utf-8')
+export const writeTextFileAsync = (filePath: string, content: string): Promise<void> => fsPromises.writeFile(filePath, content, 'utf-8')
+export const readBinaryFile = (filePath: string): Buffer => fs.readFileSync(filePath)
+export const readBinaryFileAsync = (filePath: string): Promise<Buffer> => fsPromises.readFile(filePath)
 
-  // write_text_file
-  writeTextFile: (path, content) => fs.writeFileSync(path, content, 'utf-8'),
-  writeTextFileAsync: (path, content) => fsPromises.writeFile(path, content, 'utf-8'),
+export function readDir(dirPath: string) {
+  return fs.readdirSync(dirPath, { withFileTypes: true }).map(entry => ({
+    name: entry.name,
+    path: path.join(dirPath, entry.name),
+    isFile: entry.isFile(),
+    isDirectory: entry.isDirectory(),
+    isSymlink: entry.isSymbolicLink(),
+  }))
+}
 
-  // read_binary_file
-  readBinaryFile: (path) => fs.readFileSync(path),  // 返回 Buffer
-  readBinaryFileAsync: (path) => fsPromises.readFile(path),
+export const createDirAll = (dirPath: string): void => fs.mkdirSync(dirPath, { recursive: true })
+export const removeFile = (filePath: string): void => fs.unlinkSync(filePath)
+export const removeDir = (dirPath: string): void => fs.rmSync(dirPath, { recursive: true, force: true })
+export const rename = (oldPath: string, newPath: string): void => fs.renameSync(oldPath, newPath)
+export const copyFile = (src: string, dst: string): void => fs.copyFileSync(src, dst)
+export const exists = (targetPath: string): boolean => fs.existsSync(targetPath)
 
-  // read_dir
-  readDir: (dirPath) => {
-    return fs.readdirSync(dirPath, { withFileTypes: true }).map(entry => ({
-      name: entry.name,
-      path: require('node:path').join(dirPath, entry.name),
-      isFile: entry.isFile(),
-      isDirectory: entry.isDirectory(),
-      isSymlink: entry.isSymbolicLink(),
-    }))
-  },
+export function fileMetadata(filePath: string) {
+  const stat = fs.statSync(filePath)
+  return {
+    size: stat.size,
+    isFile: stat.isFile(),
+    isDirectory: stat.isDirectory(),
+    mtime: stat.mtimeMs,
+    ctime: stat.ctimeMs,
+    readonly: false,
+  }
+}
 
-  // create_dir_all
-  createDirAll: (path) => fs.mkdirSync(path, { recursive: true }),
+export function watchFile(filePath: string, callback: (eventType: string) => void): () => void {
+  const watcher = fs.watch(filePath, eventType => callback(eventType))
+  return () => watcher.close()
+}
 
-  // remove_file
-  removeFile: (path) => fs.unlinkSync(path),
-
-  // remove_dir (含内容)
-  removeDir: (path) => fs.rmSync(path, { recursive: true, force: true }),
-
-  // rename
-  rename: (oldPath, newPath) => fs.renameSync(oldPath, newPath),
-
-  // copy_file
-  copyFile: (src, dst) => fs.copyFileSync(src, dst),
-
-  // file_metadata (stat)
-  fileMetadata: (path) => {
-    const stat = fs.statSync(path)
-    return {
-      size: stat.size,
-      isFile: stat.isFile(),
-      isDirectory: stat.isDirectory(),
-      mtime: stat.mtimeMs,      // 修改时间（毫秒时间戳）
-      ctime: stat.ctimeMs,      // 创建时间
-      readonly: false,          // 简化处理
-    }
-  },
-
-  // 检查路径是否存在
-  exists: (path) => fs.existsSync(path),
-
-  // 监听文件变化（返回取消函数）
-  watchFile: (filePath, callback) => {
-    const watcher = fs.watch(filePath, (eventType) => {
-      callback(eventType)  // 'rename' | 'change'
-    })
-    return () => watcher.close()
-  },
-
-  // 监听目录变化
-  watchDir: (dirPath, callback) => {
-    const watcher = fs.watch(dirPath, { recursive: true }, (eventType, filename) => {
-      callback({ eventType, filename })
-    })
-    return () => watcher.close()
-  },
+export function watchDir(dirPath: string, callback: (event: { eventType: string; filename: string | null }) => void): () => void {
+  const watcher = fs.watch(dirPath, { recursive: true }, (eventType, filename) => callback({ eventType, filename }))
+  return () => watcher.close()
 }
 ```
-
 ### 前端 `@tauri-apps/api/fs` → preload 调用
 
 ```typescript
@@ -200,12 +176,13 @@ use tauri::api::path::{
 };
 ```
 
-```javascript
-// ── preload.js ──
+```ts
+// ── utools/preload.ts（示意；实际用命名导出）──
 const os = require('node:os')
 const path = require('node:path')
 
-window.preload = {
+// Compact mapping shape only; implement each property as a TypeScript named export in utools/preload.ts.
+const preloadMapping = {
   // home_dir
   homeDir: () => os.homedir(),
 
@@ -279,12 +256,13 @@ fn run_command(cmd: String, args: Vec<String>) -> Result<String, String> {
 tauri::api::shell::open(&app.shell_scope(), url, None).unwrap();
 ```
 
-```javascript
-// ── preload.js ──
+```ts
+// ── utools/preload.ts（示意；实际用命名导出）──
 const { execSync, exec, spawn } = require('node:child_process')
 const { shell } = require('electron')
 
-window.preload = {
+// Compact mapping shape only; implement each property as a TypeScript named export in utools/preload.ts.
+const preloadMapping = {
   // run_command（同步）
   execSync: (cmd, opts = {}) => execSync(cmd, { encoding: 'utf-8', ...opts }),
 
@@ -397,12 +375,13 @@ const text = await readText()
 await writeText('hello clipboard')
 ```
 
-```javascript
+```ts
 // ── 迁移后 ──
 
-// preload.js（推荐，更可靠）
+// utools/preload.ts（推荐，更可靠，实际用命名导出）
 const { clipboard } = require('electron')
-window.preload = {
+// Compact mapping shape only; implement each property as a TypeScript named export in utools/preload.ts.
+const preloadMapping = {
   clipboardRead:  () => clipboard.readText(),
   clipboardWrite: (t) => clipboard.writeText(t),
   clipboardReadImage: () => clipboard.readImage().toDataURL(),
@@ -482,9 +461,10 @@ const result = await fetch('https://api.example.com/data', {
 }).then(r => r.json())
 
 // 需要 Node.js 能力（如绕过 CORS、自定义 TLS）时用 preload
-// preload.js
+// utools/preload.ts
 const https = require('node:https')
-window.preload = {
+// Compact mapping shape only; implement each property as a TypeScript named export in utools/preload.ts.
+const preloadMapping = {
   fetchRaw: (url, opts = {}) => new Promise((resolve, reject) => {
     https.get(url, opts, (res) => {
       let data = ''
@@ -569,13 +549,14 @@ await emit('user-action', { type: 'click', target: 'button' })
 unlisten()
 ```
 
-```javascript
-// ── preload.js（用 EventEmitter 替代）──
+```ts
+// ── utools/preload.ts（用 EventEmitter 替代，示意；实际用命名导出）──
 const { EventEmitter } = require('node:events')
 const bridge = new EventEmitter()
 bridge.setMaxListeners(50)  // 防止内存泄漏警告
 
-window.preload = {
+// Compact mapping shape only; implement each property as a TypeScript named export in utools/preload.ts.
+const preloadMapping = {
   // listen → preload.on（返回 unlisten 函数）
   on: (event, handler) => {
     bridge.on(event, handler)
@@ -671,7 +652,7 @@ await register('CommandOrControl+Shift+P', () => {
 // 1. 在 plugin.json features.cmds 中定义关键词，用户通过 uTools 搜索框触发
 // 2. 用 uTools 的 "超级面板" 功能，让用户划词后选择插件功能
 // 3. 如果必须要全局快捷键，需要使用 utools.createBrowserWindow 创建后台窗口
-//    并在后台窗口的 preload.js 中注册（但此方式不官方支持，可能被安全策略拦截）
+//    并在后台窗口的 utools/preload.ts 中注册（但此方式不官方支持，可能被安全策略拦截）
 ```
 
 ---
@@ -684,11 +665,12 @@ use tauri::api::process::current_binary;
 use std::env;
 ```
 
-```javascript
-// ── preload.js ──
+```ts
+// ── utools/preload.ts（示意；实际用命名导出）──
 const os = require('node:os')
 
-window.preload = {
+// Compact mapping shape only; implement each property as a TypeScript named export in utools/preload.ts.
+const preloadMapping = {
   // 操作系统
   platform:    () => process.platform,          // 'darwin' | 'win32' | 'linux'
   arch:        () => process.arch,              // 'x64' | 'arm64'

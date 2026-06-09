@@ -1,6 +1,6 @@
 # Skill overlay
 
-> Current skill overlay (2026-06-07): use this as an extended manifest checklist, especially for publish metadata and trigger shapes. Official uTools docs and generated `@ver5/vite-plugin-utools/utools.schema.json` remain the final source for field availability. In source projects using `@ver5/vite-plugin-utools`, prefer `utools/plugin.json` + `utools/preload.ts`; in generated dist, `plugin.json` should point to `preload.js`.
+> Current skill overlay (2026-06-09): use this as an extended manifest checklist, especially for publish metadata and trigger shapes. Official uTools docs and generated `@ver5/vite-plugin-utools/utools.schema.json` remain the final source for field availability. In source projects using `@ver5/vite-plugin-utools`, require `utools/plugin.json` + `utools/preload.ts`; in generated dist, `plugin.json` should point to `preload.js`.
 
 ---
 
@@ -38,7 +38,7 @@
 | 值 | 说明 |
 |----|------|
 | *(不填)* | 默认模式：有 UI 的普通插件 |
-| `"none"` | 无 UI 静默执行。不渲染 `main` 页面，仅执行 `preload.js`。适合系统脚本、一键操作类插件 |
+| `"none"` | 无 UI 静默执行。不渲染 `main` 页面；源码仍写 `utools/preload.ts`，构建后执行 `preload.js`。适合系统脚本、一键操作类插件 |
 | `"list"` | 列表模式（已被 features cmds 覆盖，通常不需要单独设置） |
 
 ---
@@ -282,7 +282,7 @@ interface Tool {
 
 ---
 
-## 完整示例
+## 完整示例（`@ver5/vite-plugin-utools` 源码清单）
 
 ```jsonc
 {
@@ -295,7 +295,7 @@ interface Tool {
   "homepage": "https://github.com/your-name/my-file-manager",
 
   "main": "index.html",
-  "preload": "preload.js",
+  "preload": "preload.ts",
   "logo": "logo.png",
 
   "singleton": true,

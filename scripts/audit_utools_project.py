@@ -142,6 +142,15 @@ def has_ver5_plugin(package: dict[str, Any] | None) -> bool:
     return "@ver5/vite-plugin-utools" in deps
 
 
+def has_ver5_plugin_as_dev_dependency(package: dict[str, Any] | None) -> bool:
+    """Return whether @ver5/vite-plugin-utools is declared as a dev dependency per its README."""
+
+    if not package:
+        return False
+    dev_deps = package.get("devDependencies", {})
+    return isinstance(dev_deps, dict) and "@ver5/vite-plugin-utools" in dev_deps
+
+
 def package_deps(package: dict[str, Any] | None) -> dict[str, Any]:
     """Return combined dependencies and devDependencies."""
 
@@ -251,6 +260,35 @@ def check_source_preload_ts_constraint(
     preload_path = manifest.parent / preload
     if not preload_path.exists():
         add(findings, "error", "`utools/plugin.json` points to preload.ts but the file is missing", str(preload_path))
+        return
+    check_preload_ts_source(findings, preload_path)
+
+
+def check_preload_ts_source(findings: list[Finding], preload_path: Path) -> None:
+    """Check that preload.ts follows @ver5 named-export source conventions."""
+
+    text = preload_path.read_text(encoding="utf-8", errors="ignore")
+    if re.search(r"\bwindow\.preload\s*=", text):
+        add(
+            findings,
+            "error",
+            "Do not manually assign `window.preload = ...` in utools/preload.ts; use TypeScript named exports so @ver5/vite-plugin-utools can mount them to window[name] and generate mocks.",
+            str(preload_path),
+        )
+    if re.search(r"\bmodule\.exports\b|\bexports\.", text):
+        add(
+            findings,
+            "warn",
+            "utools/preload.ts should use ESM-style TypeScript named exports, not CommonJS exports.",
+            str(preload_path),
+        )
+    if not re.search(r"\bexport\s+(?:async\s+)?(?:function|const|let|var|class)\b", text):
+        add(
+            findings,
+            "warn",
+            "utools/preload.ts does not appear to define named exports; page-facing APIs should be named exports mounted to window[name].",
+            str(preload_path),
+        )
 
 
 def iter_cmds(feature: dict[str, Any]) -> Iterable[tuple[int, Any]]:
@@ -355,12 +393,28 @@ def check_package_integration(findings: list[Finding], project: Path, package: d
     has_plugin = has_ver5_plugin(package)
     if not has_plugin:
         add(findings, "warn", "@ver5/vite-plugin-utools is not declared; install it for Vite-based projects")
+    elif not has_ver5_plugin_as_dev_dependency(package):
+        add(findings, "warn", "@ver5/vite-plugin-utools should be installed in devDependencies per its README")
+
+    source_preload_js = project / "utools" / "preload.js"
+    source_preload_ts = project / "utools" / "preload.ts"
+    if has_plugin and source_preload_js.exists():
+        add(
+            findings,
+            "error",
+            "Do not develop against utools/preload.js with @ver5/vite-plugin-utools; use utools/preload.ts and let the plugin generate dist/preload.js.",
+            str(source_preload_js),
+        )
+    if has_plugin and source_preload_ts.exists() and not (project / "utools" / "plugin.json").exists():
+        check_preload_ts_source(findings, source_preload_ts)
 
     vite_files = list(project.glob("vite.config.*"))
     if has_plugin and vite_files:
         joined = "\n".join(p.read_text(encoding="utf-8", errors="ignore") for p in vite_files)
         if "@ver5/vite-plugin-utools" not in joined or "configFile" not in joined:
             add(findings, "warn", "Vite config does not appear to initialize @ver5/vite-plugin-utools with configFile")
+        if "name:" not in joined:
+            add(findings, "info", "Vite plugin `name` option is omitted; named preload exports will mount to default window.preload")
 
     tsconfig = project / "tsconfig.json"
     if has_plugin and tsconfig.exists():

@@ -16,6 +16,9 @@
 - 迁移既有 Vue / React / Angular / Svelte / Solid / Electron / Tauri 项目时，默认尊重源项目技术栈；只有在用户明确要求重写时才切换到默认 Vue 栈。
 - 源码工程默认使用：`utools/plugin.json` + `utools/preload.ts` + `utools/logo.png`。
 - 使用 `@ver5/vite-plugin-utools` 时，源码 `utools/plugin.json` 的 `preload` 必须是 `"preload.ts"`。
+- 不推荐普通手写 JS preload 作为源码形态；新建与迁移项目都应优先使用 `@ver5/vite-plugin-utools` 按 README 的 TypeScript 工程方式组织。
+- `utools/preload.ts` 中通过命名导出暴露服务，按 Vite 插件配置的 `name` 挂载到 `window[name]`；默认 `name: "preload"`，即 UI 通过 `window.preload.xxx()` 调用。
+- 浏览器 mock 只用于普通浏览器环境下的简单 UI 查看与契约测试；真实宿主能力、Node/Electron API、文件、数据库、AI tools、UPX 必须在 uTools Developer Tools / 构建产物中验证。
 - 生产构建输出仍应生成 `dist/preload.js`，并确保它不落在 `"type": "module"` 的 package scope 下；必要时在 `dist/package.json` 写入 `{ "type": "commonjs" }`。
 - UI 与宿主能力分层：前端只调用窄桥接 API，文件系统、Electron renderer API、uTools DB、AI tools 等放在 preload/service 层。
 
@@ -24,8 +27,8 @@
 ```bash
 pnpm create vite@latest my-utools-plugin --template vue-ts
 cd my-utools-plugin
-pnpm add vue@latest @vueuse/core@latest pinia@latest vuetify@latest @ver5/vite-plugin-utools@latest
-pnpm add -D vite@latest typescript@latest @vitejs/plugin-vue@latest vue-tsc@latest
+pnpm add vue@latest @vueuse/core@latest pinia@latest vuetify@latest
+pnpm add -D vite@latest typescript@latest @vitejs/plugin-vue@latest vue-tsc@latest @ver5/vite-plugin-utools@latest
 ```
 
 当前 npm registry 快照（2026-06-07）：

@@ -1,6 +1,6 @@
 # Skill overlay
 
-> Current skill overlay (2026-06-07): when using `@ver5/vite-plugin-utools`, author source preload as `utools/preload.ts` and set source `utools/plugin.json` to `"preload": "preload.ts"`. The production package should still contain generated `dist/preload.js`, and that final `.js` must not sit under a `type: module` package scope unless a nearer `{ "type": "commonjs" }` package file overrides it. When this file conflicts with live official docs or the skill root, trust the skill root and live runtime first.
+> Current skill overlay (2026-06-09): use `@ver5/vite-plugin-utools + TypeScript` as the default engineering workflow. Author source preload only as `utools/preload.ts`, set source `utools/plugin.json` to `"preload": "preload.ts"`, and expose services with TypeScript named exports mounted to `window[name]` (`window.preload` by default). Browser mock is only for simple UI preview in a normal browser. The production package should still contain generated `dist/preload.js`, and that final `.js` must not sit under a `type: module` package scope unless a nearer `{ "type": "commonjs" }` package file overrides it. When this file conflicts with live official docs or the skill root, trust the skill root and live runtime first.
 
 ---
 
@@ -18,7 +18,7 @@
 
 1. [底层架构透视](#1-底层架构透视)
 2. [plugin.json 配置全解](#2-pluginjson-配置全解)
-3. [preload.js 工程化](#3-preloadjs-工程化)
+3. [preload.ts 工程化](#3-preloadts-工程化)
 4. [Bridge 层设计：跨环境 API 适配](#4-bridge-层设计跨环境-api-适配)
 5. [构建工具链选型与配置](#5-构建工具链选型与配置)
 6. [Web 框架迁移（Vue / React / Angular / Svelte / Solid）](#6-web-框架迁移)
@@ -48,8 +48,8 @@ uTools 本质是一个**经深度定制的 Electron 宿主容器**，结合了 N
 │   │         │ window.utools.*                               │    │
 │   │         │ window.exports.* / window.preload.*           │    │
 │   │   ┌─────▼──────────────────┐                            │    │
-│   │   │   preload.js           │  ← 沙箱突破口               │    │
-│   │   │   (CommonJS · Node 16) │  ← 禁止压缩混淆             │    │
+│   │   │   dist/preload.js      │  ← 由 preload.ts 构建生成    │    │
+│   │   │   (CommonJS · Node)    │  ← 禁止压缩混淆             │    │
 │   │   │   require('fs')        │                            │    │
 │   │   │   require('electron')  │  ← 仅限渲染进程子集         │    │
 │   │   └────────────────────────┘                            │    │
@@ -63,8 +63,9 @@ uTools 本质是一个**经深度定制的 Electron 宿主容器**，结合了 N
 
 | 约束项 | 规则 | 违反后果 |
 |--------|------|---------|
-| preload.js 格式 | **必须 CommonJS**，禁止 `import/export` | 运行时报错 |
-| preload.js 安全 | **禁止压缩/混淆**，需明文通过安全审查 | 上架审核拒绝 |
+| preload 源码 | **必须使用 `utools/preload.ts` + 命名导出** | mock/类型/构建失效 |
+| dist/preload.js | 由 `@ver5/vite-plugin-utools` 生成，需 CommonJS 可执行 | 运行时报错 |
+| preload 安全 | **禁止压缩/混淆**，需明文通过安全审查 | 上架审核拒绝 |
 | Node.js 版本 | uTools 内置 **Node 16.x**，勿单独安装 electron | ABI 冲突崩溃 |
 | Electron API 范围 | 仅渲染进程子集（`clipboard` / `shell` / `ipcRenderer`） | 调用报错 |
 | 渲染层路由 | 必须 **Hash 路由**，不能 HTML5 History | 深层路由白屏 |
@@ -93,7 +94,7 @@ uTools 本质是一个**经深度定制的 Electron 宿主容器**，结合了 N
 
   // ── 运行入口 ──
   "main": "index.html",     // 前端页面入口（相对路径）
-  "preload": "preload.js",  // Node.js 桥接脚本
+  "preload": "preload.ts",  // 源码清单：由 @ver5/vite-plugin-utools 构建为 dist/preload.js
   "logo": "logo.png",       // 插件图标（推荐 256×256 PNG）
 
   // ── 窗口配置 ──
@@ -195,7 +196,7 @@ uTools 本质是一个**经深度定制的 Electron 宿主容器**，结合了 N
 
 ---
 
-## 3. preload.js 工程化
+## 3. preload.ts 工程化
 
 ### 3.1 模块化 preload（TypeScript → CJS，配合 @ver5/vite-plugin-utools）
 
@@ -257,66 +258,33 @@ export default {
 }
 ```
 
-### 3.2 纯手写 CJS preload.js（不使用构建工具）
+### 3.2 不再推荐手写 JS preload 源码
 
-```javascript
-// preload.js — 必须 CommonJS，禁止压缩/混淆（安全审核要求）
-'use strict'
+本 Skill 的工程路径是 `@ver5/vite-plugin-utools + TypeScript`：
 
-const fs = require('node:fs')
-const path = require('node:path')
-const os = require('node:os')
-const { execSync } = require('node:child_process')
-const { workerThreads } = require('node:worker_threads')
-const { clipboard, shell } = require('electron')
+- 源码只维护 `utools/preload.ts`。
+- 源码 `utools/plugin.json` 写 `"preload": "preload.ts"`。
+- 页面服务通过 `preload.ts` 命名导出暴露，并由插件配置 `name` 挂载到 `window[name]`，默认 `window.preload`。
+- `preload.js` 只作为 `vite build` 后的运行时产物存在，不作为手写源码模板。
 
-// ── 主 API 命名空间（对外暴露为 window.preload 或 window.exports）──
-window.preload = {
-  // 文件系统
-  readFile:  (p)            => fs.readFileSync(p, 'utf-8'),
-  writeFile: (p, c)         => fs.writeFileSync(p, c, 'utf-8'),
-  exists:    (p)            => fs.existsSync(p),
-  readDir:   (p)            => fs.readdirSync(p, { withFileTypes: true }),
-  mkdir:     (p)            => fs.mkdirSync(p, { recursive: true }),
-  unlink:    (p)            => fs.unlinkSync(p),
+如果旧项目已有手写 `window.preload = { readFile() {} }`，迁移时应改为：
 
-  // 路径工具
-  join:      (...a)         => path.join(...a),
-  basename:  (p, ext)       => path.basename(p, ext),
-  extname:   (p)            => path.extname(p),
-  dirname:   (p)            => path.dirname(p),
+```ts
+// utools/preload.ts
+import { readFileSync } from 'node:fs'
 
-  // 系统信息
-  homedir:   ()             => os.homedir(),
-  tmpdir:    ()             => os.tmpdir(),
-
-  // 剪贴板
-  clipRead:  ()             => clipboard.readText(),
-  clipWrite: (t)            => clipboard.writeText(t),
-  clipImage: ()             => clipboard.readImage().toDataURL(),
-
-  // 外部打开
-  openURL:   (url)          => shell.openExternal(url),
-  openPath:  (p)            => shell.openPath(p),
-
-  // 子进程执行（注意安全输入验证）
-  exec:      (cmd, opts = {}) => execSync(cmd, { encoding: 'utf-8', ...opts }),
+/** Read a UTF-8 text file. */
+export function readFile(path: string): string {
+  return readFileSync(path, 'utf-8')
 }
-
-// ── 生命周期 ──
-window.utools.onPluginEnter(({ code, type, payload }) => {
-  window.__utools_enter__ = { code, type, payload }
-})
-
-window.utools.onPluginOut(() => {
-  window.__utools_enter__ = null
-})
 ```
+
+页面层仍按 `window.preload.readFile(path)` 调用，因为命名导出会由插件挂载到默认命名空间。
 
 ### 3.3 可用的 Electron API 子集
 
-```javascript
-// preload.js 中 require('electron') 可用部分
+```ts
+// dist/preload.js 运行时 require('electron') 可用部分
 const {
   // ✅ 渲染进程 API — 可用
   clipboard,      // 剪贴板读写（文本/图片/RTF/HTML）
@@ -536,7 +504,7 @@ export default defineConfig(({ command }) => {
         // 排除不需要打包的依赖
         external: ['better-sqlite3'],
 
-        // 开发 Mock：浏览器态自动注入 utools mock + preload mock
+        // 开发 Mock：仅用于普通浏览器里的 UI 预览/契约检查
         mock: { enabled: !isProd, showBadge: !isProd },
 
         // vConsole 调试（仅开发态）
@@ -621,7 +589,7 @@ export default defineConfig(({ command }) => {
 
 ✅ 构建：base → './'（相对路径）
 
-✅ 添加 preload.js + plugin.json
+✅ 添加 utools/preload.ts + utools/plugin.json
 
 ✅ 接入 uTools 生命周期（onPluginEnter / onPluginOut）
 ```
@@ -921,7 +889,7 @@ export function App() {
 │  前端框架 UI                              │
 └──────────────┬──────────────────────────┘
                │ window.preload.*（同进程）
-┌─── preload.js ──────────────────────────┐
+┌─── utools/preload.ts ──────────────────────────┐
 │  原主进程逻辑 → 移植到此处               │
 │  const fs = require('fs')               │
 │  window.preload.doX = (args) => ...     │
@@ -947,7 +915,7 @@ export function App() {
 | `dialog.showMessageBox` | `window.utools.showMessageBox({...})` | — |
 | `Menu.buildFromTemplate` | 不支持 | 改为插件内自定义 UI |
 | `Tray` | 不支持 | uTools 自身有 Tray 机制 |
-| `ipcMain.handle(ch, fn)` | 移到 `preload.js`，`window.preload.ch = fn` | 核心迁移动作 |
+| `ipcMain.handle(ch, fn)` | 移到 `utools/preload.ts` 命名导出 | 核心迁移动作 |
 | `ipcRenderer.invoke(ch, args)` | `window.preload.ch(args)` | 直接调用 |
 | `contextBridge.exposeInMainWorld` | 直接挂 `window.*`（uTools 已做沙箱） | — |
 | `Notification` | `window.utools.showNotification(msg)` | — |
@@ -957,7 +925,7 @@ export function App() {
 
 ### 7.3 IPC 层迁移代码对照
 
-```javascript
+```ts
 // ── 原 Electron main.js ──
 const { ipcMain, dialog } = require('electron')
 const fs = require('fs')
@@ -969,22 +937,29 @@ ipcMain.handle('dialog:open', async () => dialog.showOpenDialog({ properties: ['
 ipcMain.handle('exec',      async (_e, cmd) => execSync(cmd, { encoding: 'utf-8' }))
 ```
 
-```javascript
-// ── 迁移后 uTools preload.js ──
-const fs = require('node:fs')
-const { execSync } = require('node:child_process')
+```ts
+// ── 迁移后 uTools 源码：utools/preload.ts ──
+import { execSync } from 'node:child_process'
+import fs from 'node:fs'
 
-window.preload = {
-  // ipcMain.handle('fs:read') → window.preload.fsRead()
-  fsRead:   (path) => fs.readFileSync(path, 'utf-8'),
-  fsWrite:  (path, data) => fs.writeFileSync(path, data),
+/** ipcMain.handle('fs:read') → window.preload.fsRead() */
+export function fsRead(path: string): string {
+  return fs.readFileSync(path, 'utf-8')
+}
 
-  // ipcMain.handle('dialog:open') → window.preload.dialogOpen()
-  // ⚠️ 对话框 API 改用 utools 提供的
-  dialogOpen: () => window.utools.showOpenDialog({ properties: ['openFile'] }),
+/** ipcMain.handle('fs:write') → window.preload.fsWrite() */
+export function fsWrite(path: string, data: string): void {
+  fs.writeFileSync(path, data)
+}
 
-  // ipcMain.handle('exec') → window.preload.exec()
-  exec: (cmd) => execSync(cmd, { encoding: 'utf-8' }),
+/** ipcMain.handle('dialog:open') → window.preload.dialogOpen() */
+export function dialogOpen() {
+  return window.utools.showOpenDialog({ properties: ['openFile'] })
+}
+
+/** ipcMain.handle('exec') → window.preload.exec() */
+export function exec(cmd: string): string {
+  return execSync(cmd, { encoding: 'utf-8' })
 }
 ```
 
@@ -1004,7 +979,7 @@ const { filePaths } = await window.preload.dialogOpen()
 
 ### 7.4 多窗口迁移（BrowserWindow → createBrowserWindow）
 
-```javascript
+```ts
 // ── 原 Electron main.js ──
 const win = new BrowserWindow({
   width: 800, height: 600,
@@ -1012,7 +987,7 @@ const win = new BrowserWindow({
 })
 win.loadURL('https://example.com')
 
-// ── 迁移后 uTools preload.js / 渲染层 ──
+// ── 迁移后 uTools 渲染层 ──
 // ⚠️ 关键：子窗口必须同样配置 preload，否则无法使用 Node.js 能力
 window.utools.createBrowserWindow(
   'child.html',
@@ -1029,23 +1004,32 @@ window.utools.createBrowserWindow(
 
 ### 7.5 主进程全局状态迁移
 
-```javascript
+```ts
 // ── 原主进程：全局状态存 JS 变量 ──
 // let globalUser = null, globalConfig = {}
 
-// ── 迁移后 uTools preload.js ──
+// ── 迁移后 uTools 源码：utools/preload.ts ──
 // 会话内状态（插件关闭即清除）
-const session = {}
+const session = new Map<string, unknown>()
 
-// 持久化状态（改用 utools.db）
-window.preload = {
-  // 会话状态
-  sessionGet: (key) => session[key],
-  sessionSet: (key, val) => { session[key] = val },
+/** 读取会话状态，挂载为 window.preload.sessionGet()。 */
+export function sessionGet(key: string): unknown {
+  return session.get(key)
+}
 
-  // 持久化配置
-  configGet: (key) => window.utools.dbStorage.getItem(key),
-  configSet: (key, val) => window.utools.dbStorage.setItem(key, val),
+/** 写入会话状态，挂载为 window.preload.sessionSet()。 */
+export function sessionSet(key: string, value: unknown): void {
+  session.set(key, value)
+}
+
+/** 读取持久化配置。 */
+export function configGet<T>(key: string): T | null {
+  return window.utools.dbStorage.getItem(key) as T | null
+}
+
+/** 写入持久化配置。 */
+export function configSet(key: string, value: unknown): void {
+  window.utools.dbStorage.setItem(key, value)
 }
 ```
 
@@ -1054,7 +1038,7 @@ window.preload = {
 ## 8. Tauri 应用 → uTools 跨语言桥接
 
 Tauri 迁移是最复杂的场景。前端 UI 代码几乎无需改动，
-核心工作是将 Rust 后端命令在 `preload.js` 中用 Node.js 重新实现。
+核心工作是将 Rust 后端命令在 `utools/preload.ts` 中用 Node.js/uTools API 重新实现，并通过命名导出挂载到 `window.preload`。
 
 ### 8.1 架构对比
 
@@ -1073,15 +1057,15 @@ Tauri 架构：
 [Chromium 渲染层]
     │ window.preload.rustCommand(args)   ← 接口名保持一致
     ↓
-[preload.js · Node.js 16]
-    │ require('node:fs') / require('node:child_process')
+[utools/preload.ts · TypeScript]
+    │ import node:fs / node:child_process
     ↓
 [系统 API / npm 生态]
 ```
 
 ### 8.2 Rust Command → Node.js 对照表
 
-| Tauri Rust 能力 | Node.js 替代（preload.js） |
+| Tauri Rust 能力 | Node.js/uTools 替代（utools/preload.ts） |
 |----------------|--------------------------|
 | `std::fs::read_to_string(path)` | `fs.readFileSync(path, 'utf-8')` |
 | `std::fs::write(path, data)` | `fs.writeFileSync(path, data)` |
@@ -1130,11 +1114,11 @@ const src = 'file://' + '/path/to/image.png'
 ### 8.4 方案B：`__TAURI_IPC__` 拦截（前端零改动）
 
 > 此方案逆用 Tauri 官方测试 Mock 机制，通过拦截 `window.__TAURI_IPC__`，
-> 将所有 `invoke()` 调用无感重定向到 `preload.js` 的 Node.js 实现。
+> 将所有 `invoke()` 调用无感重定向到 `utools/preload.ts` 的 TypeScript 命名导出实现。
 > **适合前端代码量大、不想批量修改 invoke 调用的项目。**
 
-```javascript
-// preload.js — 在渲染层加载前注入拦截器
+```ts
+// utools/preload.ts — 在渲染层加载前注入拦截器
 
 const fs = require('node:fs')
 const { execSync } = require('node:child_process')
@@ -1193,8 +1177,8 @@ window.__TAURI_INVOKE__ = window.__TAURI_IPC__
 
 ### 8.5 Tauri 安全沙箱重建（路径防御）
 
-```javascript
-// preload.js — 重建等价于 Tauri Allowlist 的路径边界检查
+```ts
+// utools/preload.ts — 重建等价于 Tauri Allowlist 的路径边界检查
 
 const path = require('node:path')
 const os = require('node:os')
@@ -1233,7 +1217,8 @@ function assertSafePath(targetPath) {
 }
 
 // 安全包装文件操作
-window.preload = {
+// Compact mapping shape only; implement each property as a named export in utools/preload.ts.
+const preloadMapping = {
   readFile: (p) => {
     const safe = assertSafePath(p)
     return require('node:fs').readFileSync(safe, 'utf-8')
@@ -1247,13 +1232,14 @@ window.preload = {
 
 ### 8.6 Tauri 事件系统迁移
 
-```javascript
-// preload.js — 用 EventEmitter 替代 Tauri emit/listen
+```ts
+// utools/preload.ts — 用 EventEmitter 替代 Tauri emit/listen
 
 const { EventEmitter } = require('node:events')
 const emitter = new EventEmitter()
 
-window.preload = {
+// Compact mapping shape only; implement each property as a named export in utools/preload.ts.
+const preloadMapping = {
   // 替代 tauri::api::event::emit()
   emit: (event, payload) => emitter.emit(event, payload),
 
@@ -1452,12 +1438,13 @@ node-gyp rebuild \
 
 ```typescript
 // 使用 sql.js（WASM SQLite）替代 better-sqlite3
-// preload.js
+// utools/preload.ts
 const initSqlJs = require('sql.js')  // 或 require('@jlongster/sql.js')
 
 let _db = null
 
-window.preload = {
+// Compact mapping shape only; implement each method as a named export in utools/preload.ts.
+const preloadMapping = {
   async initDB(dbPath) {
     const SQL = await initSqlJs()
     const fs = require('node:fs')
@@ -1491,8 +1478,8 @@ window.preload = {
 
 ### 11.1 完整生命周期管理
 
-```javascript
-// preload.js — 生命周期全覆盖
+```ts
+// utools/preload.ts — 生命周期全覆盖
 
 let cleanupFns = []  // 收集所有需要清理的资源
 
@@ -1559,8 +1546,8 @@ onMounted(() => {
 
 ### 11.3 AI Agent 工具对接（plugin.json tools + preload）
 
-```javascript
-// preload.js — 实现 plugin.json 中声明的 AI Tools
+```ts
+// utools/preload.ts — 实现 plugin.json 中声明的 AI Tools
 
 // uTools 会调用这些 handler 来响应 AI Agent 的工具调用
 window.utools.onToolCall(async (toolName, input) => {
@@ -1618,26 +1605,26 @@ export const log = (level: Level, message: string, data?: unknown) => {
 
 ## 12. 常见陷阱与解决方案
 
-### ❌ 陷阱 1：preload.js 使用 ESM 语法
+### ❌ 陷阱 1：把生成物规则误套到 TypeScript 源码
 
-```javascript
-// ❌ 错误
-import { readFileSync } from 'fs'
-export const readFile = () => {}
-
-// ✅ 正确（CJS）
+```ts
+// ❌ 错误：把源码写成手工 window 挂载，绕过 @ver5 的导出分析与 mock 生成
 const { readFileSync } = require('fs')
 window.preload = { readFile: readFileSync }
+
+// ✅ 正确：utools/preload.ts 用 TypeScript 命名导出
+import { readFileSync } from 'node:fs'
+export const readFile = (path: string) => readFileSync(path, 'utf-8')
 ```
 
 ### ❌ 陷阱 2：渲染层 require
 
-```javascript
+```ts
 // ❌ 错误：渲染层是浏览器环境，没有 require
 const fs = require('fs')  // ReferenceError
 
-// ✅ 正确：只在 preload.js 中 require，通过 window.* 暴露
-// preload.js: window.preload = { readFile: (p) => fs.readFileSync(p) }
+// ✅ 正确：只在 utools/preload.ts 中导入 Node API，通过命名导出暴露
+// utools/preload.ts: export const readFile = (p: string) => readFileSync(p, 'utf-8')
 // 渲染层:    window.preload.readFile('/path')
 ```
 
@@ -1654,7 +1641,7 @@ createRouter({ history: createWebHashHistory() })
 
 ### ❌ 陷阱 4：调用不存在的主进程 API
 
-```javascript
+```ts
 // ❌ 错误：主进程 API 在 preload 中不可用（运行时崩溃）
 const { BrowserWindow, app } = require('electron')  // 报错
 
@@ -1665,7 +1652,7 @@ const { clipboard, shell } = require('electron')
 
 ### ❌ 阱阱 5：preload 中事件监听泄漏
 
-```javascript
+```ts
 // ❌ 错误：每次进入插件都添加新监听器，永不清除
 window.utools.onPluginEnter(() => {
   document.addEventListener('keydown', handler)  // 越积越多！
@@ -1687,7 +1674,7 @@ window.utools.onPluginOut(() => {
 
 ### ❌ 陷阱 6：utools.db.put 版本冲突
 
-```javascript
+```ts
 // ❌ 错误：更新时不携带 _rev，触发 409 冲突
 window.utools.db.put({ _id: 'my-doc', data: 'new' })
 
@@ -1704,7 +1691,7 @@ if (existing) {
 
 ```typescript
 // ❌ 问题：Zone.js 拦截 Node.js 的异步宏任务，导致内存泄漏
-// Zone.js 会劫持 preload.js 中暴露的基于 Node 的异步 API
+// Zone.js 会劫持 preload.ts 命名导出暴露的基于 Node 的异步 API
 
 // ✅ 解决方案 A：Zone-less 模式（推荐）
 // angular.json 中移除 "zone.js" polyfill
@@ -1727,7 +1714,7 @@ class MyService {
 
 ### ❌ 陷阱 8：Tauri 路径安全漏洞
 
-```javascript
+```ts
 // ❌ 危险：直接把用户输入的路径传给 fs，可能被利用做路径穿越攻击
 window.__TAURI_IPC__ = async ({ cmd, args }) => {
   if (cmd === 'read_file') {
